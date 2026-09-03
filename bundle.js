@@ -6407,10 +6407,38 @@ var STAdapter = class {
     const [, ext, data] = match;
     const baseName = sanitizePathSegment(fileName.replace(/\.[^.]+$/, "")) || `sprite_${Date.now()}`;
     const folder = sanitizePathSegment(characterName) || "shared";
-    if (typeof ctx.saveBase64AsFile === "function") {
-      return await ctx.saveBase64AsFile(data, `sprite-overlay/${folder}`, baseName, ext);
+    try {
+      const payload = {
+        image: data,
+        // 纯 base64 数据（不含 data:image/...;base64, 前缀）
+        format: ext,
+        // 文件扩展名（不含点）
+        ch_name: folder,
+        // 角色名（会被 sanitize，不能含斜杠）
+        filename: baseName.replace(/\./g, "_")
+        // 文件名，点号替换成下划线
+      };
+      console.log("[sprite-overlay] 上传图片到 ST:", {
+        ch_name: payload.ch_name,
+        filename: payload.filename,
+        format: payload.format
+      });
+      const response = await fetch("/api/images/upload", {
+        method: "POST",
+        headers: ctx.getRequestHeaders(),
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const errorText2 = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText2}`);
+      }
+      const result = await response.json();
+      console.log("[sprite-overlay] 上传成功，路径:", result.path);
+      return result.path;
+    } catch (error) {
+      console.error("[sprite-overlay] 上传失败，回退到 base64:", error);
+      return base64Data;
     }
-    return base64Data;
   }
   async saveImageFile(file, fileName, characterName) {
     return this.saveImage(fileName, await blobToDataUri(file), characterName);
@@ -9776,7 +9804,8 @@ ${preview}
           const url = await deps.adapter.saveImage(
             file.name,
             result.dataUri,
-            deps.adapter.getCurrentCharacterName() || plan.targetPackName
+            plan.targetPackName
+            // 始终按图包名称建目录，不依赖当前角色卡
           );
           let targetId = plan.targetPackId;
           if (!targetId) {
@@ -13272,7 +13301,7 @@ function observed(value, reason) {
 }
 function buildVersion() {
   if (false) return null;
-  return `${"0.9.0"}+${"2026-09-01 20:48"}`;
+  return `${"0.9.0"}+${"2026-09-03 12:45"}`;
 }
 function stVersion() {
   const text4 = document.querySelector("#version_display")?.textContent?.trim();
@@ -19239,7 +19268,7 @@ async function init(lifecycle) {
   newvarRuntime.start();
   phone.setState(settings.phone);
   phone.setVisible(settings.showPhone);
-  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-01 20:48"}`;
+  const version = false ? "dev" : `v${"0.9.0"} · ${"2026-09-03 12:45"}`;
   console.log(`[sprite-overlay] 百工（st-stage）已加载（含手机框架）${version}`);
 }
 var extensionLifecycle = beginExtensionLifecycle(window, document);
